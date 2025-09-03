@@ -1,38 +1,33 @@
 import OpenAI from 'openai';
-import { NextResponse } from 'next/server';
+import { OpenAIStream, StreamingTextResponse } from 'ai';
+import { NextRequest } from 'next/server';
 
-// OpenAIクライアントの初期化
-const openai = new OpenAI(); // APIキーは環境変数から自動読み込み
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
+
+// ▼【重要点3】Edge RuntimeでAPIを実行することを宣言
+export const runtime = 'edge';
 
 export async function POST(req) {
-  // ★デバッグ用: APIルートが呼び出されたことを確認
-  console.log("API route /api/chat was hit!");
-
   try {
-    const body = await req.json();
-    const { messages, teacherPrompt } = body;
-
-    // ★デバッグ用: 受け取った内容を確認
-    console.log("Received prompt:", teacherPrompt);
-
-    if (!messages || !teacherPrompt) {
-      console.error("Invalid request: Missing messages or teacherPrompt");
-      return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
-    }
-
-    const apiMessages = [
-      { role: 'system', content: teacherPrompt },
-      ...messages.map(msg => ({ role: msg.role, content: msg.content })),
-    ];
-
-    const completion = await openai.chat.completions.create({
-      model: 'gpt-4-turbo',
-      messages: apiMessages,
+    const { messages, teacherPrompt } = await req.json();
+    
+    const response = await openai.chat.completions.create({
+      model: 'gpt-4o',
+      // ▼【重要点4】OpenAIに応答をストリーミング形式で要求
+      stream: true, 
+      messages: [
+        { role: 'system', content: teacherPrompt },
+        ...messages
+      ],
     });
 
-    const responseText = completion.choices[0].message.content;
+    // ▼【重要点5】応答をクライアント向けのストリームに変換
+    const stream = OpenAIStream(response);
 
-    return NextResponse.json({ text: responseText });
+    // ストリーム形式でクライアントに応答を返す
+    return new StreamingTextResponse(stream);
 
   } catch (error) {
     // ★デバッグ用: エラー内容をログに出力
