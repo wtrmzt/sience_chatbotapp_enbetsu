@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: nextjs-chatbot
+    runtime: node
+    plan: standard # 30人の同時アクセスにはStandardプラン以上を推奨
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: OPENAI_API_KEY # ここにAPIキーを設定
+        sync: false # ダッシュボードで安全に設定するためsyncしない
+    scaling:
+      minInstances: 1
+      maxInstances: 3 # 最大3インスタンスまで自動でスケールアウト
+      targetCPUPercent: 60 # CPU使用率が60%を超えたら新しいインスタンスを追加
