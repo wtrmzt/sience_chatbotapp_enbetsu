@@ -8,8 +8,9 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
-      - key: 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 # ここにAPIキーを設定
-        sync: false # ダッシュボードで安全に設定するためsyncしない
+      # ▼▼▼ ここが重要 ▼▼▼
+      - key: OPENAI_API_KEY # アプリ内で参照する環境変数名
+        sync: false         # falseにすることで、値はRenderのダッシュボードで設定する
     scaling:
       minInstances: 1
       maxInstances: 3 # 最大3インスタンスまで自動でスケールアウト
