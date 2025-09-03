@@ -1,42 +1,44 @@
-import OpenAI from 'openai';
-import { NextResponse } from 'next/server';
+import { OpenAIStream, StreamingTextResponse } from 'ai';
 
-// OpenAIクライアントの初期化
-const openai = new OpenAI(); // APIキーは環境変数から自動読み込み
+// OpenAIクライアントを初期化
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
+
+// Edge Runtimeで実行することを宣言
+export const runtime = 'edge';
 
 export async function POST(req) {
-  // ★デバッグ用: APIルートが呼び出されたことを確認
-  console.log("API route /api/chat was hit!");
-
   try {
-    const body = await req.json();
-    const { messages, teacherPrompt } = body;
+    const { messages, teacherPrompt } = await req.json();
 
-    // ★デバッグ用: 受け取った内容を確認
-    console.log("Received prompt:", teacherPrompt);
+    // フロントエンドから受け取ったプロンプトを「システムメッセージ」として設定
+    const systemMessage = {
+      role: 'system',
+      content: teacherPrompt || 'You are a helpful teaching assistant.',
+    };
 
-    if (!messages || !teacherPrompt) {
-      console.error("Invalid request: Missing messages or teacherPrompt");
-      return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
-    }
+    // システムメッセージとユーザーの会話履歴を結合
+    const messagesForApi = [systemMessage, ...messages];
 
-    const apiMessages = [
-      { role: 'system', content: teacherPrompt },
-      ...messages.map(msg => ({ role: msg.role, content: msg.content })),
-    ];
-
-    const completion = await openai.chat.completions.create({
-      model: 'gpt-4-turbo',
-      messages: apiMessages,
+    // OpenAI APIを呼び出し
+    const response = await openai.chat.completions.create({
+      model: 'gpt-4o',
+      stream: true, // ★ これがストリーミングを有効化する重要なオプション
+      messages: messagesForApi,
     });
 
-    const responseText = completion.choices[0].message.content;
+    // 応答をストリームに変換
+    const stream = OpenAIStream(response);
 
-    return NextResponse.json({ text: responseText });
+    // ストリームをクライアントに返す
+    return new StreamingTextResponse(stream);
 
   } catch (error) {
-    // ★デバッグ用: エラー内容をログに出力
-    console.error('[API Error]', error);
+    // エラーハンドリング
+    console.error('Error in chat API:', error);
+
+
     return NextResponse.json(
         { error: error.message || 'An unknown error occurred' }, 
         { status: 500 }
