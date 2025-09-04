@@ -172,9 +172,18 @@ export async function POST(req) {
       );
     }
 
+    // ▼▼▼ 修正点: より詳細なエラーメッセージを返す ▼▼▼
+    // 予期せぬエラーが発生した場合、エラーの詳細をクライアントに返し、デバッグしやすくします。
+    const errorMessage = error.message || '不明なサーバーエラーが発生しました。';
+    const errorName = error.name || 'UnknownError';
+
     return new Response(
-      JSON.stringify({ error: 'サーバーエラーが発生しました。' }), 
+      JSON.stringify({
+        error: `サーバーエラーが発生しました。詳細は次の通りです: ${errorName} - ${errorMessage}`,
+      }),
       { status: 500, headers: { 'Content-Type': 'application/json' } }
     );
+    // ▲▲▲ 修正ここまで ▲▲▲
   }
 }
+
