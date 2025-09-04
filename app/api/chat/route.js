@@ -1,4 +1,4 @@
-import { streamText, StreamingTextResponse } from 'ai'; // StreamingTextResponse をインポート
+import { streamText } from 'ai'; // StreamingTextResponse のインポートを削除
 import { createOpenAI } from '@ai-sdk/openai'; // 'OpenAI'ではなく'createOpenAI'をインポート
 
 // 起動時にAPIキーの存在をチェック
@@ -139,8 +139,8 @@ export async function POST(req) {
       temperature: 0.7,
     });
 
-    // ▼▼▼ 修正点: StreamingTextResponseを使用してレスポンスを返す ▼▼▼
-    return new StreamingTextResponse(result.stream);
+    // ▼▼▼ 修正点: 標準のResponseオブジェクトを使用してストリームを返す ▼▼▼
+    return new Response(result.stream);
     // ▲▲▲ 修正ここまで ▲▲▲
 
   } catch (error) {
