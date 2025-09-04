@@ -138,9 +138,36 @@ export async function POST(req) {
       maxTokens: 1000, // レスポンストークンを制限
       temperature: 0.7,
     });
+    
+    // ▼▼▼ 修正点: デバッグ用にレスポンスをログ出力する ▼▼▼
+    
+    // ストリームは一度しか読み取れないため、tee()メソッドで2つに分岐させます。
+    // 一方をログ出力用、もう一方をクライアントへのレスポンス用に使います。
+    const [logStream, clientStream] = result.stream.tee();
 
-    // ▼▼▼ 修正点: 標準のResponseオブジェクトを使用してストリームを返す ▼▼▼
-    return new Response(result.stream);
+    // ログ出力用の非同期関数を定義
+    const logResponse = async () => {
+      const reader = logStream.getReader();
+      const decoder = new TextDecoder();
+      console.log('--- OpenAIからのレスポンス開始 ---');
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) {
+          console.log('--- OpenAIからのレスポンス終了 ---');
+          break;
+        }
+        // valueはUint8Array形式なので、人間が読める文字列に変換してログに出力します。
+        const chunk = decoder.decode(value, { stream: true });
+        // データチャンクの形式（`data: {...}`）でログに出力されます。
+        process.stdout.write(chunk);
+      }
+    };
+    
+    // ログ出力をバックグラウンドで実行します（クライアントへの応答をブロックしません）。
+    logResponse();
+
+    // クライアントには、分岐させたもう片方のストリームを返します。
+    return new Response(clientStream);
     // ▲▲▲ 修正ここまで ▲▲▲
 
   } catch (error) {
