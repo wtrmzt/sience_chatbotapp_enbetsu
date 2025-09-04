@@ -52,16 +52,13 @@ const useRateLimit = (limit = 10, windowMs = 60000) => {
 
 // --- デバウンスフック ---
 const useDebounce = (callback: Function, delay: number) => {
-  // The ref can hold a Timeout object or null, and it starts as null.
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
   
   return useCallback((...args: any[]) => {
-    // If there's a timeout running, clear it.
     if (timeoutRef.current) {
       clearTimeout(timeoutRef.current);
     }
     
-    // Set a new timeout.
     timeoutRef.current = setTimeout(() => {
       callback(...args);
     }, delay);
@@ -125,7 +122,6 @@ export default function ChatbotPage() {
   }, []);
 
   const debouncedInputChange = useDebounce((value: string) => {
-    // 入力値の長さをチェック（4000文字制限）
     if (value.length > 4000) {
       setError('入力は4000文字以内にしてください。');
     } else {
@@ -143,7 +139,6 @@ export default function ChatbotPage() {
     e.preventDefault();
     if (!studentInput.trim() || isLoading || !currentProblem || error) return;
 
-    // レート制限チェック
     if (!checkRateLimit()) {
       setError(`レート制限に達しました。残り ${getRemainingRequests()} 回のリクエストが可能です。`);
       return;
@@ -151,7 +146,7 @@ export default function ChatbotPage() {
 
     const newUserMessage = { 
       role: 'user', 
-      content: studentInput.trim().slice(0, 4000), // 4000文字制限
+      content: studentInput.trim().slice(0, 4000),
       timestamp: Date.now()
     };
     const newChatHistory = [...chatHistory, newUserMessage];
@@ -161,7 +156,6 @@ export default function ChatbotPage() {
     setIsLoading(true);
     setError(null);
 
-    // 前のリクエストをキャンセル
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
     }
@@ -175,7 +169,7 @@ export default function ChatbotPage() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          messages: newChatHistory.slice(-10), // 最新の10件のみ送信
+          messages: newChatHistory.slice(-10),
           teacherPrompt: currentProblem.prompt,
         }),
         signal: abortControllerRef.current.signal,
@@ -183,30 +177,27 @@ export default function ChatbotPage() {
 
       if (!response.ok) {
         let errorMessage = 'エラーが発生しました。';
-        
         try {
           const errorData = await response.json();
           errorMessage = errorData.error || errorMessage;
         } catch {
-          if (response.status === 429) {
-            errorMessage = 'リクエストが多すぎます。しばらくお待ちください。';
-          } else if (response.status === 408) {
-            errorMessage = 'リクエストがタイムアウトしました。';
-          } else if (response.status >= 500) {
-            errorMessage = 'サーバーエラーが発生しました。';
-          }
+          // JSONパースに失敗した場合のフォールバック
+          if (response.status === 429) errorMessage = 'リクエストが多すぎます。しばらくお待ちください。';
+          else if (response.status >= 500) errorMessage = 'サーバーエラーが発生しました。';
         }
-        
         throw new Error(errorMessage);
       }
 
-      // ストリーミングレスポンスの処理
+      // ▼▼▼ 修正点: ストリーミングレスポンスの処理を簡略化 ▼▼▼
       const reader = response.body?.getReader();
       if (!reader) {
         throw new Error('レスポンスの読み込みに失敗しました。');
       }
 
+      const decoder = new TextDecoder();
       let assistantMessage = '';
+      
+      // アシスタントの空のメッセージをまず追加
       setChatHistory(prev => [...prev, { 
         role: 'assistant', 
         content: '', 
@@ -217,33 +208,21 @@ export default function ChatbotPage() {
         const { done, value } = await reader.read();
         if (done) break;
 
-        const chunk = new TextDecoder().decode(value);
-        const lines = chunk.split('\n');
+        // 受け取ったデータをデコードして、そのままメッセージに追加します。
+        const chunk = decoder.decode(value, { stream: true });
+        assistantMessage += chunk;
         
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            const data = line.slice(6);
-            if (data === '[DONE]') continue;
-            
-            try {
-              const parsed = JSON.parse(data);
-              if (parsed.choices?.[0]?.delta?.content) {
-                assistantMessage += parsed.choices[0].delta.content;
-                setChatHistory(prev => {
-                  const updated = [...prev];
-                  updated[updated.length - 1] = {
-                    ...updated[updated.length - 1],
-                    content: assistantMessage
-                  };
-                  return updated;
-                });
-              }
-            } catch (e) {
-              // パースエラーは無視
-            }
-          }
-        }
+        // 最後のメッセージを更新
+        setChatHistory(prev => {
+          const updated = [...prev];
+          updated[updated.length - 1] = {
+            ...updated[updated.length - 1],
+            content: assistantMessage
+          };
+          return updated;
+        });
       }
+      // ▲▲▲ 修正ここまで ▲▲▲
 
     } catch (error: any) {
       console.error('Failed to fetch chat response:', error);
