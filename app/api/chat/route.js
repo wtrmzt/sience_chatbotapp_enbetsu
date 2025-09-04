@@ -1,5 +1,4 @@
-import { streamText } from 'ai';
-import { createOpenAI } from '@ai-sdk/openai';
+// Vercel AI SDKのインポートを削除し、Web標準のAPIを使用します
 
 // Vercel Edge Runtime を使用して、応答を高速化します
 export const runtime = 'edge';
@@ -46,39 +45,29 @@ setInterval(() => {
 
 export async function POST(req) {
   try {
-    // ▼▼▼ 修正点: OpenAIクライアントの初期化をリクエストハンドラ内に移動 ▼▼▼
-    const openai = createOpenAI({
-      // 環境変数はこのスコープ内で確実に参照されます
-      apiKey: process.env.OPENAI_API_KEY, 
-      timeout: 30000,
-      maxRetries: 2,
-    });
-    // ▲▲▲ 修正ここまで ▲▲▲
+    // APIキーの存在チェック
+    if (!process.env.OPENAI_API_KEY) {
+      console.error('OPENAI_API_KEY is not set.');
+      return new Response(
+        JSON.stringify({ error: 'サーバー側でAPIキーが設定されていません。' }),
+        { status: 500, headers: { 'Content-Type': 'application/json' } }
+      );
+    }
 
     // リクエスト元のIPアドレスを取得
     const clientId = req.headers.get('x-forwarded-for') || 
                      req.headers.get('x-real-ip') || 
                      'anonymous';
 
-    // レート制限チェック（1分間に10リクエスト）
+    // レート制限チェック
     if (!checkRateLimit(clientId, 10, 60000)) {
       return new Response(
-        JSON.stringify({ 
-          error: 'レート制限に達しました。しばらくお待ちください。' 
-        }), 
-        { 
-          status: 429, 
-          headers: { 
-            'Content-Type': 'application/json',
-            'Retry-After': '60'
-          } 
-        }
+        JSON.stringify({ error: 'レート制限に達しました。' }), 
+        { status: 429, headers: { 'Content-Type': 'application/json' } }
       );
     }
 
-    // リクエストボディの検証
-    const body = await req.json();
-    const { messages, teacherPrompt } = body;
+    const { messages, teacherPrompt } = await req.json();
 
     // 入力検証
     if (!messages || !Array.isArray(messages) || messages.length === 0) {
@@ -87,52 +76,51 @@ export async function POST(req) {
         { status: 400, headers: { 'Content-Type': 'application/json' } }
       );
     }
-
-    const limitedMessages = messages.slice(-10);
-    const sanitizedMessages = limitedMessages.map(msg => ({
-      ...msg,
-      content: typeof msg.content === 'string' 
-        ? msg.content.slice(0, 4000) 
-        : msg.content
-    }));
-    const sanitizedPrompt = typeof teacherPrompt === 'string' 
-      ? teacherPrompt.slice(0, 2000) 
-      : 'You are a helpful teaching assistant.';
-
-    // OpenAI APIにリクエストを送信します
-    const result = await streamText({
-      model: openai('gpt-4o-mini'), 
-      system: sanitizedPrompt,
-      messages: sanitizedMessages,
-      maxTokens: 1000,
-      temperature: 0.7,
-    });
     
-    // result.streamが存在しない場合、APIエラーと判断します。
-    if (!result || !result.stream) {
-      console.error('API Error: "stream" property is missing from the result object.', result);
-      const errorDetails = result.error || result || 'Unknown API error';
+    // OpenAI APIに送信するリクエストボディを構築
+    const requestBody = {
+      model: 'gpt-4o-mini',
+      messages: [
+        { role: 'system', content: teacherPrompt || 'You are a helpful teaching assistant.' },
+        ...messages.slice(-10) // 最新の10件のメッセージを含める
+      ],
+      stream: true, // ストリーミングを有効にする
+      max_tokens: 1000,
+      temperature: 0.7,
+    };
+
+    // ▼▼▼ 修正点: 標準のfetchを使用してOpenAI APIを直接呼び出す ▼▼▼
+    const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+      },
+      body: JSON.stringify(requestBody),
+    });
+
+    // OpenAIからの応答がエラーでないかチェック
+    if (!openaiResponse.ok) {
+      const errorBody = await openaiResponse.json();
+      console.error('OpenAI API Error:', errorBody);
       return new Response(
-        JSON.stringify({ 
-          error: `OpenAI APIから無効な応答がありました。詳細: ${JSON.stringify(errorDetails)}` 
-        }), 
-        { status: 500, headers: { 'Content-Type': 'application/json' } }
+        JSON.stringify({ error: `OpenAI APIからのエラー: ${errorBody.error.message}` }),
+        { status: openaiResponse.status, headers: { 'Content-Type': 'application/json' } }
       );
     }
-    
-    // ストリームが正常に取得できた場合、クライアントに返します。
-    return new Response(result.stream);
+
+    // OpenAIからのストリームをそのままクライアントに中継する
+    return new Response(openaiResponse.body, {
+      headers: {
+        'Content-Type': 'text/event-stream',
+      },
+    });
+    // ▲▲▲ 修正ここまで ▲▲▲
 
   } catch (error) {
     console.error('API Error caught in the main catch block:', error);
-
-    const errorName = error.name || 'UnknownError';
-    const errorMessage = error.message || '不明なサーバーエラーが発生しました。';
-
     return new Response(
-      JSON.stringify({
-        error: `サーバーエラーが発生しました。詳細は次の通りです: ${errorName} - ${errorMessage}`,
-      }),
+      JSON.stringify({ error: 'サーバーで予期せぬエラーが発生しました。' }),
       { status: 500, headers: { 'Content-Type': 'application/json' } }
     );
   }
