@@ -181,14 +181,13 @@ export default function ChatbotPage() {
           const errorData = await response.json();
           errorMessage = errorData.error || errorMessage;
         } catch {
-          // JSONパースに失敗した場合のフォールバック
           if (response.status === 429) errorMessage = 'リクエストが多すぎます。しばらくお待ちください。';
           else if (response.status >= 500) errorMessage = 'サーバーエラーが発生しました。';
         }
         throw new Error(errorMessage);
       }
 
-      // ▼▼▼ 修正点: ストリーミングレスポンスの処理を簡略化 ▼▼▼
+      // ▼▼▼ 修正点: OpenAIからのJSONストリームを正しく処理するロジックに戻します ▼▼▼
       const reader = response.body?.getReader();
       if (!reader) {
         throw new Error('レスポンスの読み込みに失敗しました。');
@@ -197,7 +196,6 @@ export default function ChatbotPage() {
       const decoder = new TextDecoder();
       let assistantMessage = '';
       
-      // アシスタントの空のメッセージをまず追加
       setChatHistory(prev => [...prev, { 
         role: 'assistant', 
         content: '', 
@@ -208,19 +206,34 @@ export default function ChatbotPage() {
         const { done, value } = await reader.read();
         if (done) break;
 
-        // 受け取ったデータをデコードして、そのままメッセージに追加します。
-        const chunk = decoder.decode(value, { stream: true });
-        assistantMessage += chunk;
+        const chunk = decoder.decode(value);
+        const lines = chunk.split('\n');
         
-        // 最後のメッセージを更新
-        setChatHistory(prev => {
-          const updated = [...prev];
-          updated[updated.length - 1] = {
-            ...updated[updated.length - 1],
-            content: assistantMessage
-          };
-          return updated;
-        });
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            const data = line.slice(6);
+            if (data.trim() === '[DONE]') continue;
+            
+            try {
+              const parsed = JSON.parse(data);
+              const content = parsed.choices?.[0]?.delta?.content;
+
+              if (content) {
+                assistantMessage += content;
+                setChatHistory(prev => {
+                  const updated = [...prev];
+                  const lastMessage = updated[updated.length - 1];
+                  if (lastMessage && lastMessage.role === 'assistant') {
+                    lastMessage.content = assistantMessage;
+                  }
+                  return updated;
+                });
+              }
+            } catch (e) {
+              // JSONパースエラーは無視します
+            }
+          }
+        }
       }
       // ▲▲▲ 修正ここまで ▲▲▲
 
@@ -393,3 +406,4 @@ export default function ChatbotPage() {
     </div>
   );
 }
+
