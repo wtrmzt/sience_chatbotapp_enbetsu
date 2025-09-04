@@ -1,14 +1,12 @@
-import { streamText } from 'ai';
+import { streamText, StreamingTextResponse } from 'ai'; // StreamingTextResponse をインポート
 import { createOpenAI } from '@ai-sdk/openai'; // 'OpenAI'ではなく'createOpenAI'をインポート
 
-// ▼▼▼ 修正点1: 起動時にAPIキーの存在をチェック ▼▼▼
-// サーバーの起動ログにAPIキーが設定されていない旨のメッセージを出力します。
+// 起動時にAPIキーの存在をチェック
 if (!process.env.OPENAI_API_KEY) {
   console.error(
     '【エラー】 環境変数にOPENAI_API_KEYが設定されていません。Renderのダッシュボードで設定してください。'
   );
 }
-// ▲▲▲ 修正ここまで ▲▲▲
 
 const openai = createOpenAI({ // newを使わずに呼び出す
   // コネクション設定の最適化
@@ -61,8 +59,7 @@ setInterval(() => {
 
 export async function POST(req) {
   try {
-    // ▼▼▼ 修正点2: リクエスト処理時にAPIキーをチェック ▼▼▼
-    // APIキーが設定されていない場合、エラーレスポンスを返して処理を中断します。
+    // リクエスト処理時にAPIキーをチェック
     if (!process.env.OPENAI_API_KEY) {
       return new Response(
         JSON.stringify({ 
@@ -74,7 +71,6 @@ export async function POST(req) {
         }
       );
     }
-    // ▲▲▲ 修正ここまで ▲▲▲
 
     // リクエスト元のIPアドレスを取得
     const clientId = req.headers.get('x-forwarded-for') || 
@@ -141,11 +137,11 @@ export async function POST(req) {
       messages: sanitizedMessages,
       maxTokens: 1000, // レスポンストークンを制限
       temperature: 0.7,
-      stream: true,
     });
 
-    // AIからの応答ストリームをクライアントに返します
-    return result.toAIStreamResponse();
+    // ▼▼▼ 修正点: StreamingTextResponseを使用してレスポンスを返す ▼▼▼
+    return new StreamingTextResponse(result.stream);
+    // ▲▲▲ 修正ここまで ▲▲▲
 
   } catch (error) {
     console.error('API Error:', error);
@@ -172,7 +168,6 @@ export async function POST(req) {
       );
     }
 
-    // ▼▼▼ 修正点: より詳細なエラーメッセージを返す ▼▼▼
     // 予期せぬエラーが発生した場合、エラーの詳細をクライアントに返し、デバッグしやすくします。
     const errorMessage = error.message || '不明なサーバーエラーが発生しました。';
     const errorName = error.name || 'UnknownError';
@@ -183,7 +178,6 @@ export async function POST(req) {
       }),
       { status: 500, headers: { 'Content-Type': 'application/json' } }
     );
-    // ▲▲▲ 修正ここまで ▲▲▲
   }
 }
 
