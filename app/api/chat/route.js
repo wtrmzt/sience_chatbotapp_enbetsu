@@ -139,39 +139,34 @@ export async function POST(req) {
       temperature: 0.7,
     });
     
-    // ▼▼▼ 修正点: デバッグ用にレスポンスをログ出力する ▼▼▼
+    // ▼▼▼ 修正点: APIからの返り値をログで確認し、エラーハンドリングを強化 ▼▼▼
     
-    // ストリームは一度しか読み取れないため、tee()メソッドで2つに分岐させます。
-    // 一方をログ出力用、もう一方をクライアントへのレスポンス用に使います。
-    const [logStream, clientStream] = result.stream.tee();
+    // APIからの戻り値をサーバーログに出力して確認します。
+    console.log('Full result from streamText:', JSON.stringify(result, null, 2));
 
-    // ログ出力用の非同期関数を定義
-    const logResponse = async () => {
-      const reader = logStream.getReader();
-      const decoder = new TextDecoder();
-      console.log('--- OpenAIからのレスポンス開始 ---');
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) {
-          console.log('--- OpenAIからのレスポンス終了 ---');
-          break;
+    // resultオブジェクト、またはresult.streamプロパティが存在しない場合、APIエラーと判断します。
+    if (!result || !result.stream) {
+      console.error('API Error: "stream" property is missing from the result object.');
+      // resultオブジェクト自体にエラー詳細が含まれている可能性があるので、それもクライアントに返します。
+      const errorDetails = result.error || result || 'Unknown API error';
+      return new Response(
+        JSON.stringify({ 
+          error: `OpenAI APIから無効な応答がありました。詳細: ${JSON.stringify(errorDetails)}` 
+        }), 
+        { 
+          status: 500, 
+          headers: { 'Content-Type': 'application/json' } 
         }
-        // valueはUint8Array形式なので、人間が読める文字列に変換してログに出力します。
-        const chunk = decoder.decode(value, { stream: true });
-        // データチャンクの形式（`data: {...}`）でログに出力されます。
-        process.stdout.write(chunk);
-      }
-    };
+      );
+    }
     
-    // ログ出力をバックグラウンドで実行します（クライアントへの応答をブロックしません）。
-    logResponse();
-
-    // クライアントには、分岐させたもう片方のストリームを返します。
-    return new Response(clientStream);
+    // ストリームが正常に取得できた場合、クライアントに返します。
+    return new Response(result.stream);
     // ▲▲▲ 修正ここまで ▲▲▲
 
   } catch (error) {
-    console.error('API Error:', error);
+    // こちらのcatchブロックは、リクエスト全体で予期せぬエラーが起きた場合に実行されます。
+    console.error('API Error caught in the main catch block:', error);
 
     // エラーの種類に応じて適切なレスポンスを返す
     if (error.name === 'AbortError') {
