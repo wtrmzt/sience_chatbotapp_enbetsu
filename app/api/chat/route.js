@@ -1,40 +1,157 @@
-import OpenAI from 'openai';
-import { OpenAIStream, StreamingTextResponse } from 'ai';
-import { NextRequest } from 'next/server';
+import { OpenAI } from '@ai-sdk/openai';
+import { streamText } from 'ai';
 
+// OpenAIクライアントを初期化します
 const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
+  // コネクション設定の最適化
+  timeout: 30000, // 30秒タイムアウト
+  maxRetries: 2,  // リトライ回数を制限
 });
 
-// ▼【重要点3】Edge RuntimeでAPIを実行することを宣言
+// Vercel Edge Runtime を使用して、応答を高速化します
 export const runtime = 'edge';
+
+// レート制限のためのメモリマップ
+const rateLimitMap = new Map();
+
+// レート制限チェック関数
+function checkRateLimit(clientId, limit = 10, windowMs = 60000) {
+  const now = Date.now();
+  const windowStart = now - windowMs;
+  
+  if (!rateLimitMap.has(clientId)) {
+    rateLimitMap.set(clientId, []);
+  }
+  
+  const requests = rateLimitMap.get(clientId);
+  
+  // 古いリクエストを削除
+  const validRequests = requests.filter(time => time > windowStart);
+  rateLimitMap.set(clientId, validRequests);
+  
+  if (validRequests.length >= limit) {
+    return false;
+  }
+  
+  // 新しいリクエストを記録
+  validRequests.push(now);
+  return true;
+}
+
+// メモリクリーンアップ（5分ごと）
+setInterval(() => {
+  const now = Date.now();
+  for (const [clientId, requests] of rateLimitMap.entries()) {
+    const validRequests = requests.filter(time => time > now - 300000);
+    if (validRequests.length === 0) {
+      rateLimitMap.delete(clientId);
+    } else {
+      rateLimitMap.set(clientId, validRequests);
+    }
+  }
+}, 300000);
 
 export async function POST(req) {
   try {
-    const { messages, teacherPrompt } = await req.json();
-    
-    const response = await openai.chat.completions.create({
-      model: 'gpt-4o',
-      // ▼【重要点4】OpenAIに応答をストリーミング形式で要求
-      stream: true, 
-      messages: [
-        { role: 'system', content: teacherPrompt },
-        ...messages
-      ],
+    // リクエスト元のIPアドレスを取得
+    const clientId = req.headers.get('x-forwarded-for') || 
+                     req.headers.get('x-real-ip') || 
+                     'anonymous';
+
+    // レート制限チェック（1分間に10リクエスト）
+    if (!checkRateLimit(clientId, 10, 60000)) {
+      return new Response(
+        JSON.stringify({ 
+          error: 'レート制限に達しました。しばらくお待ちください。' 
+        }), 
+        { 
+          status: 429, 
+          headers: { 
+            'Content-Type': 'application/json',
+            'Retry-After': '60'
+          } 
+        }
+      );
+    }
+
+    // リクエストボディの検証
+    let body;
+    try {
+      body = await req.json();
+    } catch (error) {
+      return new Response(
+        JSON.stringify({ error: '無効なリクエスト形式です。' }), 
+        { status: 400, headers: { 'Content-Type': 'application/json' } }
+      );
+    }
+
+    const { messages, teacherPrompt } = body;
+
+    // 入力検証
+    if (!messages || !Array.isArray(messages) || messages.length === 0) {
+      return new Response(
+        JSON.stringify({ error: 'メッセージが必要です。' }), 
+        { status: 400, headers: { 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // メッセージ履歴を最新の10件に制限（メモリ使用量削減）
+    const limitedMessages = messages.slice(-10);
+
+    // 各メッセージの長さを制限（4000文字以下）
+    const sanitizedMessages = limitedMessages.map(msg => ({
+      ...msg,
+      content: typeof msg.content === 'string' 
+        ? msg.content.slice(0, 4000) 
+        : msg.content
+    }));
+
+    // システムプロンプトの長さも制限
+    const sanitizedPrompt = typeof teacherPrompt === 'string' 
+      ? teacherPrompt.slice(0, 2000) 
+      : 'You are a helpful teaching assistant.';
+
+    // OpenAI APIにリクエストを送信します
+    const result = await streamText({
+      model: openai('gpt-4o-mini'), // より軽量なモデルを使用
+      system: sanitizedPrompt,
+      messages: sanitizedMessages,
+      maxTokens: 1000, // レスポンストークンを制限
+      temperature: 0.7,
+      stream: true,
     });
 
-    // ▼【重要点5】応答をクライアント向けのストリームに変換
-    const stream = OpenAIStream(response);
-
-    // ストリーム形式でクライアントに応答を返す
-    return new StreamingTextResponse(stream);
+    // AIからの応答ストリームをクライアントに返します
+    return result.toAIStreamResponse();
 
   } catch (error) {
-    // ★デバッグ用: エラー内容をログに出力
-    console.error('[API Error]', error);
-    return NextResponse.json(
-        { error: error.message || 'An unknown error occurred' }, 
-        { status: 500 }
+    console.error('API Error:', error);
+
+    // エラーの種類に応じて適切なレスポンスを返す
+    if (error.name === 'AbortError') {
+      return new Response(
+        JSON.stringify({ error: 'リクエストがタイムアウトしました。' }), 
+        { status: 408, headers: { 'Content-Type': 'application/json' } }
+      );
+    }
+
+    if (error.status === 429) {
+      return new Response(
+        JSON.stringify({ error: 'APIの利用制限に達しました。しばらくお待ちください。' }), 
+        { status: 429, headers: { 'Content-Type': 'application/json' } }
+      );
+    }
+
+    if (error.status === 401) {
+      return new Response(
+        JSON.stringify({ error: 'API認証エラーです。' }), 
+        { status: 500, headers: { 'Content-Type': 'application/json' } }
+      );
+    }
+
+    return new Response(
+      JSON.stringify({ error: 'サーバーエラーが発生しました。' }), 
+      { status: 500, headers: { 'Content-Type': 'application/json' } }
     );
   }
 }
