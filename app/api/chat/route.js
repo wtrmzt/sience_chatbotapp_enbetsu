@@ -1,8 +1,8 @@
-import { OpenAI } from '@ai-sdk/openai';
 import { streamText } from 'ai';
 
-// OpenAIクライアントを初期化します
-const openai = new OpenAI({
+import { createOpenAI } from '@ai-sdk/openai'; // 'OpenAI'ではなく'createOpenAI'をインポート
+
+const openai = createOpenAI({ // newを使わずに呼び出す
   // コネクション設定の最適化
   timeout: 30000, // 30秒タイムアウト
   maxRetries: 2,  // リトライ回数を制限
