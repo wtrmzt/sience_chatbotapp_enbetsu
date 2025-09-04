@@ -1,6 +1,14 @@
 import { streamText } from 'ai';
-
 import { createOpenAI } from '@ai-sdk/openai'; // 'OpenAI'ではなく'createOpenAI'をインポート
+
+// ▼▼▼ 修正点1: 起動時にAPIキーの存在をチェック ▼▼▼
+// サーバーの起動ログにAPIキーが設定されていない旨のメッセージを出力します。
+if (!process.env.OPENAI_API_KEY) {
+  console.error(
+    '【エラー】 環境変数にOPENAI_API_KEYが設定されていません。Renderのダッシュボードで設定してください。'
+  );
+}
+// ▲▲▲ 修正ここまで ▲▲▲
 
 const openai = createOpenAI({ // newを使わずに呼び出す
   // コネクション設定の最適化
@@ -53,6 +61,21 @@ setInterval(() => {
 
 export async function POST(req) {
   try {
+    // ▼▼▼ 修正点2: リクエスト処理時にAPIキーをチェック ▼▼▼
+    // APIキーが設定されていない場合、エラーレスポンスを返して処理を中断します。
+    if (!process.env.OPENAI_API_KEY) {
+      return new Response(
+        JSON.stringify({ 
+          error: 'サーバー側でAPIキーが設定されていません。管理者にお問い合わせください。' 
+        }), 
+        { 
+          status: 500, 
+          headers: { 'Content-Type': 'application/json' } 
+        }
+      );
+    }
+    // ▲▲▲ 修正ここまで ▲▲▲
+
     // リクエスト元のIPアドレスを取得
     const clientId = req.headers.get('x-forwarded-for') || 
                      req.headers.get('x-real-ip') || 
@@ -144,7 +167,7 @@ export async function POST(req) {
 
     if (error.status === 401) {
       return new Response(
-        JSON.stringify({ error: 'API認証エラーです。' }), 
+        JSON.stringify({ error: 'API認証エラーです。APIキーが正しいか確認してください。' }), 
         { status: 500, headers: { 'Content-Type': 'application/json' } }
       );
     }
