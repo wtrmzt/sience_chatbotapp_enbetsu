@@ -139,7 +139,7 @@ export default function AdminPage() {
   return (
     <div className="min-h-screen bg-gray-100 p-4 sm:p-6 lg:p-8">
       <div className="max-w-7xl mx-auto">
-        <h1 className="text-3xl font-bold text-gray-800 mb-6">教員用管理ページ</h1>
+        <h1 className="text-3xl font-bold text-black mb-6">教員用管理ページ</h1>
         
         {isLoading ? <p>データを読み込んでいます...</p> : (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -147,13 +147,13 @@ export default function AdminPage() {
                 {/* 科目 Column */}
                 <div className="bg-white p-4 rounded-lg shadow">
                     <div className="flex justify-between items-center mb-4">
-                        <h2 className="text-xl font-bold">科目</h2>
+                        <h2 className="text-xl font-bold text-black">科目</h2>
                         <button onClick={() => handleAdd('lesson')} className="bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600 text-sm">+</button>
                     </div>
                     <ul className="space-y-2 max-h-[70vh] overflow-y-auto">
                         {lessons.map(lesson => (
                             <li key={lesson.id} onClick={() => { setSelectedLesson(lesson); setSelectedTopic(null); setSelectedProblem(null); }} className={`p-2 rounded cursor-pointer flex justify-between items-center ${selectedLesson?.id === lesson.id ? 'bg-blue-100' : 'hover:bg-gray-100'}`}>
-                                <span>{lesson.name}</span>
+                                <span className="text-black">{lesson.name}</span>
                                 <button onClick={(e) => { e.stopPropagation(); handleDelete('lesson', lesson); }} className="text-red-500 hover:text-red-700 text-xs">削除</button>
                             </li>
                         ))}
@@ -163,14 +163,14 @@ export default function AdminPage() {
                 {/* 授業 Column */}
                 <div className="bg-white p-4 rounded-lg shadow">
                      <div className="flex justify-between items-center mb-4">
-                        <h2 className="text-xl font-bold">授業</h2>
+                        <h2 className="text-xl font-bold text-black">授業</h2>
                         {selectedLesson && <button onClick={() => handleAdd('topic')} className="bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600 text-sm">+</button>}
                     </div>
                     {selectedLesson && (
                         <ul className="space-y-2 max-h-[70vh] overflow-y-auto">
                             {selectedLesson.topics.map(topic => (
                                 <li key={topic.id} onClick={() => { setSelectedTopic(topic); setSelectedProblem(null); }} className={`p-2 rounded cursor-pointer flex justify-between items-center ${selectedTopic?.id === topic.id ? 'bg-blue-100' : 'hover:bg-gray-100'}`}>
-                                    <span>{topic.name}</span>
+                                    <span className="text-black">{topic.name}</span>
                                     <button onClick={(e) => { e.stopPropagation(); handleDelete('topic', topic); }} className="text-red-500 hover:text-red-700 text-xs">削除</button>
                                 </li>
                             ))}
@@ -181,7 +181,7 @@ export default function AdminPage() {
                 {/* 設問 & 編集フォーム Column */}
                 <div className="bg-white p-4 rounded-lg shadow md:col-span-1">
                     <div className="flex justify-between items-center mb-4">
-                        <h2 className="text-xl font-bold">設問</h2>
+                        <h2 className="text-xl font-bold text-black">設問</h2>
                         {selectedTopic && <button onClick={() => handleAdd('problem')} className="bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600 text-sm">+</button>}
                     </div>
                     {selectedTopic && (
@@ -189,7 +189,7 @@ export default function AdminPage() {
                             <ul className="space-y-2 mb-6">
                                 {selectedTopic.problems.map(problem => (
                                     <li key={problem.id} onClick={() => setSelectedProblem(problem)} className={`p-2 rounded cursor-pointer flex justify-between items-center ${selectedProblem?.id === problem.id ? 'bg-blue-100' : 'hover:bg-gray-100'}`}>
-                                        <span className="truncate">{problem.title}</span>
+                                        <span className="truncate text-black">{problem.title}</span>
                                         <button onClick={(e) => { e.stopPropagation(); handleDelete('problem', problem); }} className="text-red-500 hover:text-red-700 text-xs ml-2">削除</button>
                                     </li>
                                 ))}
@@ -198,16 +198,16 @@ export default function AdminPage() {
                             {selectedProblem && (
                                 <form onSubmit={handleUpdateProblem} className="space-y-4 border-t pt-6">
                                     <div>
-                                        <label htmlFor="title" className="block text-sm font-medium text-gray-700">設問</label>
-                                        <input type="text" id="title" value={formData.title} onChange={e => setFormData({...formData, title: e.target.value})} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm" required/>
+                                        <label htmlFor="title" className="block text-sm font-medium text-gray-900">設問</label>
+                                        <input type="text" id="title" value={formData.title} onChange={e => setFormData({...formData, title: e.target.value})} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm text-black" required/>
                                     </div>
                                     <div>
-                                        <label htmlFor="question" className="block text-sm font-medium text-gray-700">最初の問いかけ</label>
-                                        <textarea id="question" rows={3} value={formData.question} onChange={e => setFormData({...formData, question: e.target.value})} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm" required/>
+                                        <label htmlFor="question" className="block text-sm font-medium text-gray-900">最初の問いかけ</label>
+                                        <textarea id="question" rows={3} value={formData.question} onChange={e => setFormData({...formData, question: e.target.value})} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm text-black" required/>
                                     </div>
                                      <div>
-                                        <label htmlFor="prompt" className="block text-sm font-medium text-gray-700">プロンプト内容</label>
-                                        <textarea id="prompt" rows={10} value={formData.prompt} onChange={e => setFormData({...formData, prompt: e.target.value})} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm font-mono" required/>
+                                        <label htmlFor="prompt" className="block text-sm font-medium text-gray-900">プロンプト内容</label>
+                                        <textarea id="prompt" rows={10} value={formData.prompt} onChange={e => setFormData({...formData, prompt: e.target.value})} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm font-mono text-black" required/>
                                     </div>
                                     <button type="submit" className="w-full bg-green-500 text-white py-2 px-4 rounded-md hover:bg-green-600">この内容で保存する</button>
                                 </form>
