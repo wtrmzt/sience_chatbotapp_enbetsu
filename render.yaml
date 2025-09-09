@@ -2,7 +2,7 @@ services:
   - type: web
     name: nextjs-chatbot
     runtime: node
-    plan: free # 30人の同時アクセスにはStandardプラン以上を推奨
+    plan: Free # 30人の同時アクセスにはStandardプラン以上を推奨
     buildCommand: npm install && npm run build
     startCommand: npm start
     envVars:
