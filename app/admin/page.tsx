@@ -18,6 +18,7 @@ const apiRequest = async (url: string, method: string, body?: any) => {
 };
 
 
+
 export default function AdminPage() {
   const [lessons, setLessons] = useState<Lesson[]>([]);
   const [selectedLesson, setSelectedLesson] = useState<Lesson | null>(null);
@@ -26,12 +27,11 @@ export default function AdminPage() {
   const [formData, setFormData] = useState<Omit<Problem, 'id'>>({ title: '', question: '', prompt: '' });
   const [isLoading, setIsLoading] = useState(true);
 
-  // データの初期読み込み
+  // データの初期読み込みと並び替え
   const fetchData = async () => {
     setIsLoading(true);
     try {
       const data = await apiRequest('/api/worksheets', 'GET');
-      // データをクライアント側で並び替え
       data.sort((a: Lesson, b: Lesson) => a.name.localeCompare(b.name, 'ja'));
       data.forEach((lesson: Lesson) => {
         lesson.topics.sort((a: Topic, b: Topic) => a.name.localeCompare(b.name, 'ja'));
@@ -51,6 +51,7 @@ export default function AdminPage() {
     fetchData();
   }, []);
 
+  // 選択された設問が変わったらフォームの内容を更新
   useEffect(() => {
     if (selectedProblem) {
       setFormData({
@@ -67,27 +68,28 @@ export default function AdminPage() {
 
   const handleAdd = async (type: 'lesson' | 'topic' | 'problem') => {
     let name: string | null = '';
-    if (type === 'lesson' || type === 'topic') {
-        name = prompt(`新しい${type === 'lesson' ? '科目' : '授業'}の名前を入力してください:`);
-        if (!name) return;
-    }
+    let payload: any = {};
+    let parentIds: any = {};
 
     try {
-        let payload: any = {};
-        let parentIds: any = {};
-
-        if (type === 'lesson') payload = { name };
-        if (type === 'topic') {
+        if (type === 'lesson') {
+            name = prompt(`新しい科目の名前を入力してください:`);
+            if (!name) return;
             payload = { name };
-            parentIds = { lessonId: selectedLesson?.id };
-        }
-        if (type === 'problem') {
+        } else if (type === 'topic') {
+            if (!selectedLesson) { alert('まず科目を選択してください。'); return; }
+            name = prompt(`新しい授業の名前を入力してください:`);
+            if (!name) return;
+            payload = { name };
+            parentIds = { lessonId: selectedLesson.id };
+        } else if (type === 'problem') {
+            if (!selectedLesson || !selectedTopic) { alert('まず科目と授業を選択してください。'); return; }
             payload = { title: '新しい設問', question: '', prompt: '' };
-            parentIds = { lessonId: selectedLesson?.id, topicId: selectedTopic?.id };
+            parentIds = { lessonId: selectedLesson.id, topicId: selectedTopic.id };
         }
         
         await apiRequest('/api/worksheets', 'POST', { type, payload, parentIds });
-        fetchData(); // データを再読み込みしてUIを更新
+        fetchData();
     } catch (error) {
         alert(`追加に失敗しました: ${(error as Error).message}`);
     }
@@ -108,19 +110,21 @@ export default function AdminPage() {
     }
   };
 
-  const handleDelete = async (type: 'lesson' | 'topic' | 'problem', id: string) => {
-    if (!confirm(`${type}「${id}」を削除しますか？関連するデータもすべて削除されます。`)) return;
+  const handleDelete = async (type: 'lesson' | 'topic' | 'problem', item: Lesson | Topic | Problem) => {
+      const typeName = type === 'lesson' ? '科目' : type === 'topic' ? '授業' : '設問';
+      const itemName = 'name' in item ? item.name : item.title;
+      if (!confirm(`${typeName}「${itemName}」を削除しますか？\n関連する下位データもすべて削除されます。`)) return;
 
     try {
-      const params = new URLSearchParams({
-        type,
-        lessonId: selectedLesson?.id || '',
-        topicId: selectedTopic?.id || '',
-        problemId: id
-      });
+      const params = new URLSearchParams({ type });
+      if (selectedLesson) params.set('lessonId', selectedLesson.id);
+      if (selectedTopic) params.set('topicId', selectedTopic.id);
+      if (type === 'problem') params.set('problemId', item.id);
+      if (type === 'topic') params.set('topicId', item.id);
+      if (type === 'lesson') params.set('lessonId', item.id);
+      
       await apiRequest(`/api/worksheets?${params.toString()}`, 'DELETE');
       
-      // 選択状態をリセット
       if(type === 'problem') setSelectedProblem(null);
       if(type === 'topic') { setSelectedTopic(null); setSelectedProblem(null); }
       if(type === 'lesson') { setSelectedLesson(null); setSelectedTopic(null); setSelectedProblem(null); }
@@ -137,9 +141,7 @@ export default function AdminPage() {
       <div className="max-w-7xl mx-auto">
         <h1 className="text-3xl font-bold text-gray-800 mb-6">教員用管理ページ</h1>
         
-        {isLoading ? (
-            <p>データを読み込んでいます...</p>
-        ) : (
+        {isLoading ? <p>データを読み込んでいます...</p> : (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 
                 {/* 科目 Column */}
@@ -148,11 +150,11 @@ export default function AdminPage() {
                         <h2 className="text-xl font-bold">科目</h2>
                         <button onClick={() => handleAdd('lesson')} className="bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600 text-sm">+</button>
                     </div>
-                    <ul className="space-y-2">
+                    <ul className="space-y-2 max-h-[70vh] overflow-y-auto">
                         {lessons.map(lesson => (
                             <li key={lesson.id} onClick={() => { setSelectedLesson(lesson); setSelectedTopic(null); setSelectedProblem(null); }} className={`p-2 rounded cursor-pointer flex justify-between items-center ${selectedLesson?.id === lesson.id ? 'bg-blue-100' : 'hover:bg-gray-100'}`}>
                                 <span>{lesson.name}</span>
-                                <button onClick={(e) => { e.stopPropagation(); handleDelete('lesson', lesson.id); }} className="text-red-500 hover:text-red-700 text-xs">削除</button>
+                                <button onClick={(e) => { e.stopPropagation(); handleDelete('lesson', lesson); }} className="text-red-500 hover:text-red-700 text-xs">削除</button>
                             </li>
                         ))}
                     </ul>
@@ -165,11 +167,11 @@ export default function AdminPage() {
                         {selectedLesson && <button onClick={() => handleAdd('topic')} className="bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600 text-sm">+</button>}
                     </div>
                     {selectedLesson && (
-                        <ul className="space-y-2">
+                        <ul className="space-y-2 max-h-[70vh] overflow-y-auto">
                             {selectedLesson.topics.map(topic => (
                                 <li key={topic.id} onClick={() => { setSelectedTopic(topic); setSelectedProblem(null); }} className={`p-2 rounded cursor-pointer flex justify-between items-center ${selectedTopic?.id === topic.id ? 'bg-blue-100' : 'hover:bg-gray-100'}`}>
                                     <span>{topic.name}</span>
-                                    <button onClick={(e) => { e.stopPropagation(); handleDelete('topic', topic.id); }} className="text-red-500 hover:text-red-700 text-xs">削除</button>
+                                    <button onClick={(e) => { e.stopPropagation(); handleDelete('topic', topic); }} className="text-red-500 hover:text-red-700 text-xs">削除</button>
                                 </li>
                             ))}
                         </ul>
@@ -183,12 +185,12 @@ export default function AdminPage() {
                         {selectedTopic && <button onClick={() => handleAdd('problem')} className="bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600 text-sm">+</button>}
                     </div>
                     {selectedTopic && (
-                        <div>
+                        <div className="max-h-[70vh] overflow-y-auto">
                             <ul className="space-y-2 mb-6">
                                 {selectedTopic.problems.map(problem => (
                                     <li key={problem.id} onClick={() => setSelectedProblem(problem)} className={`p-2 rounded cursor-pointer flex justify-between items-center ${selectedProblem?.id === problem.id ? 'bg-blue-100' : 'hover:bg-gray-100'}`}>
                                         <span className="truncate">{problem.title}</span>
-                                        <button onClick={(e) => { e.stopPropagation(); handleDelete('problem', problem.id); }} className="text-red-500 hover:text-red-700 text-xs ml-2">削除</button>
+                                        <button onClick={(e) => { e.stopPropagation(); handleDelete('problem', problem); }} className="text-red-500 hover:text-red-700 text-xs ml-2">削除</button>
                                     </li>
                                 ))}
                             </ul>
@@ -197,17 +199,17 @@ export default function AdminPage() {
                                 <form onSubmit={handleUpdateProblem} className="space-y-4 border-t pt-6">
                                     <div>
                                         <label htmlFor="title" className="block text-sm font-medium text-gray-700">設問</label>
-                                        <input type="text" id="title" value={formData.title} onChange={e => setFormData({...formData, title: e.target.value})} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm" />
+                                        <input type="text" id="title" value={formData.title} onChange={e => setFormData({...formData, title: e.target.value})} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm" required/>
                                     </div>
                                     <div>
                                         <label htmlFor="question" className="block text-sm font-medium text-gray-700">最初の問いかけ</label>
-                                        <textarea id="question" rows={3} value={formData.question} onChange={e => setFormData({...formData, question: e.target.value})} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm" />
+                                        <textarea id="question" rows={3} value={formData.question} onChange={e => setFormData({...formData, question: e.target.value})} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm" required/>
                                     </div>
                                      <div>
                                         <label htmlFor="prompt" className="block text-sm font-medium text-gray-700">プロンプト内容</label>
-                                        <textarea id="prompt" rows={10} value={formData.prompt} onChange={e => setFormData({...formData, prompt: e.target.value})} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm font-mono" />
+                                        <textarea id="prompt" rows={10} value={formData.prompt} onChange={e => setFormData({...formData, prompt: e.target.value})} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm font-mono" required/>
                                     </div>
-                                    <button type="submit" className="w-full bg-green-500 text-white py-2 px-4 rounded-md hover:bg-green-600">保存する</button>
+                                    <button type="submit" className="w-full bg-green-500 text-white py-2 px-4 rounded-md hover:bg-green-600">この内容で保存する</button>
                                 </form>
                             )}
                         </div>
@@ -219,3 +221,4 @@ export default function AdminPage() {
     </div>
   );
 }
+

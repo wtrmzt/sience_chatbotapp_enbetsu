@@ -12,8 +12,7 @@ import {
 } from 'firebase/firestore';
 import { NextResponse } from 'next/server';
 
-// GET: Fetch all worksheets data
-// Note: Removed orderBy to prevent Firestore indexing issues. Sorting is handled client-side.
+// GET: 全ての科目・授業・設問データを階層構造で取得
 export async function GET() {
   try {
     const lessonsCollection = collection(db, 'lessons');
@@ -55,22 +54,21 @@ export async function GET() {
   }
 }
 
-// POST: Add new lesson, topic, or problem
+// POST: 新しい科目、授業、または設問を追加
 export async function POST(request: Request) {
   try {
     const { type, payload, parentIds } = await request.json();
 
     let newDocRef;
-    if (type === 'lesson') {
+    if (type === 'lesson') { // 科目の追加
       newDocRef = await addDoc(collection(db, 'lessons'), { name: payload.name });
-    } else if (type === 'topic' && parentIds?.lessonId) {
+    } else if (type === 'topic' && parentIds?.lessonId) { // 授業の追加
       newDocRef = await addDoc(collection(db, `lessons/${parentIds.lessonId}/topics`), { name: payload.name });
-    } else if (type === 'problem' && parentIds?.lessonId && parentIds?.topicId) {
-      // Ensure all required fields for a problem are present
+    } else if (type === 'problem' && parentIds?.lessonId && parentIds?.topicId) { // 設問の追加
       const newProblem = {
         title: payload.title || '新しい設問',
-        question: payload.question || '',
-        prompt: payload.prompt || '',
+        question: payload.question || '最初の問いかけを編集してください。',
+        prompt: payload.prompt || 'プロンプトを編集してください。',
       };
       newDocRef = await addDoc(collection(db, `lessons/${parentIds.lessonId}/topics/${parentIds.topicId}/problems`), newProblem);
       return NextResponse.json({ id: newDocRef.id, ...newProblem });
@@ -85,7 +83,7 @@ export async function POST(request: Request) {
   }
 }
 
-// PUT: Update an existing problem
+// PUT: 既存の設問を更新 (最初の問いかけ、プロンプトなど)
 export async function PUT(request: Request) {
   try {
     const { problem, parentIds } = await request.json();
@@ -93,7 +91,6 @@ export async function PUT(request: Request) {
       throw new Error('Invalid data for updating problem');
     }
     const problemRef = doc(db, `lessons/${parentIds.lessonId}/topics/${parentIds.topicId}/problems`, problem.id);
-    // Ensure we only update the fields that are allowed to be changed
     const updatedData = {
         title: problem.title,
         question: problem.question,
@@ -107,7 +104,7 @@ export async function PUT(request: Request) {
   }
 }
 
-// DELETE: Remove a lesson, topic, or problem
+// DELETE: 科目、授業、または設問を削除 (関連データも再帰的に削除)
 export async function DELETE(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
@@ -116,15 +113,15 @@ export async function DELETE(request: Request) {
     const topicId = searchParams.get('topicId');
     const problemId = searchParams.get('problemId');
 
-    if (type === 'problem' && lessonId && topicId && problemId) {
+    if (type === 'problem' && lessonId && topicId && problemId) { // 設問の削除
       await deleteDoc(doc(db, `lessons/${lessonId}/topics/${topicId}/problems`, problemId));
-    } else if (type === 'topic' && lessonId && topicId) {
+    } else if (type === 'topic' && lessonId && topicId) { // 授業の削除
       const problemsSnapshot = await getDocs(collection(db, `lessons/${lessonId}/topics/${topicId}/problems`));
       for (const problemDoc of problemsSnapshot.docs) {
         await deleteDoc(problemDoc.ref);
       }
       await deleteDoc(doc(db, `lessons/${lessonId}/topics`, topicId));
-    } else if (type === 'lesson' && lessonId) {
+    } else if (type === 'lesson' && lessonId) { // 科目の削除
       const topicsSnapshot = await getDocs(collection(db, `lessons/${lessonId}/topics`));
       for (const topicDoc of topicsSnapshot.docs) {
         const problemsSnapshot = await getDocs(collection(db, `lessons/${lessonId}/topics/${topicDoc.id}/problems`));
