@@ -104,6 +104,22 @@ export async function PUT(request: Request) {
   }
 }
 
+// PATCH: 設問の公開状態を切り替える
+export async function PATCH(request: Request) {
+    try {
+        const { problemId, published, parentIds } = await request.json();
+        if (!problemId || typeof published !== 'boolean' || !parentIds?.lessonId || !parentIds?.topicId) {
+            throw new Error('Invalid data for patching problem');
+        }
+        const problemRef = doc(db, `lessons/${parentIds.lessonId}/topics/${parentIds.topicId}/problems`, problemId);
+        await updateDoc(problemRef, { published });
+        return NextResponse.json({ message: 'Problem patched successfully' });
+    } catch (error: any) {
+        console.error("Error patching problem: ", error);
+        return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+}
+
 // DELETE: 科目、授業、または設問を削除 (関連データも再帰的に削除)
 export async function DELETE(request: Request) {
   try {

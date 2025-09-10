@@ -17,6 +17,9 @@ const apiRequest = async (url: string, method: string, body?: any) => {
   return response.json();
 };
 
+// ★追加: アイコンコンポーネント
+const EyeOpenIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M10 12a2 2 0 100-4 2 2 0 000 4z" /><path fillRule="evenodd" d="M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.022 7-9.542 7S1.732 14.057.458 10zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clipRule="evenodd" /></svg>;
+const EyeClosedIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M3.707 2.293a1 1 0 00-1.414 1.414l14 14a1 1 0 001.414-1.414l-1.473-1.473A10.014 10.014 0 0019.542 10C18.268 5.943 14.478 3 10 3a9.958 9.958 0 00-4.512 1.074l-1.78-1.781zM10 12a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd" /><path d="M2 10s3.939 4 8 4 8-4 8-4-3.939-4-8-4-8 4-8 4zm10.707-.293a1 1 0 00-1.414-1.414l-4 4a1 1 0 001.414 1.414l4-4z" /></svg>;
 
 
 export default function AdminPage() {
@@ -24,7 +27,7 @@ export default function AdminPage() {
   const [selectedLesson, setSelectedLesson] = useState<Lesson | null>(null);
   const [selectedTopic, setSelectedTopic] = useState<Topic | null>(null);
   const [selectedProblem, setSelectedProblem] = useState<Problem | null>(null);
-  const [formData, setFormData] = useState<Omit<Problem, 'id'>>({ title: '', question: '', prompt: '' });
+  const [formData, setFormData] = useState<Omit<Problem, 'id'>>({ title: '', question: '', prompt: '' , published: false});
   const [isLoading, setIsLoading] = useState(true);
 
   // データの初期読み込みと並び替え
@@ -58,9 +61,10 @@ export default function AdminPage() {
         title: selectedProblem.title,
         question: selectedProblem.question,
         prompt: selectedProblem.prompt,
+        published: selectedProblem.published
       });
     } else {
-      setFormData({ title: '', question: '', prompt: '' });
+      setFormData({ title: '', question: '', prompt: '' , published: false});
     }
   }, [selectedProblem]);
 
@@ -107,6 +111,33 @@ export default function AdminPage() {
       fetchData();
     } catch (error) {
       alert(`更新に失敗しました: ${(error as Error).message}`);
+    }
+  };
+
+  
+  // ★追加: 公開状態を切り替えるハンドラ
+  const handleTogglePublished = async (problem: Problem) => {
+    if (!selectedLesson || !selectedTopic) return;
+    try {
+        const newPublishedState = !problem.published;
+        await apiRequest('/api/worksheets', 'PATCH', {
+            problemId: problem.id,
+            published: newPublishedState,
+            parentIds: { lessonId: selectedLesson.id, topicId: selectedTopic.id },
+        });
+
+        // UIに即時反映
+        const newLessons = [...lessons];
+        const lesson = newLessons.find(l => l.id === selectedLesson.id);
+        const topic = lesson?.topics.find(t => t.id === selectedTopic.id);
+        const p = topic?.problems.find(p => p.id === problem.id);
+        if (p) {
+          p.published = newPublishedState;
+        }
+        setLessons(newLessons);
+        
+    } catch (error) {
+        alert(`公開状態の更新に失敗しました: ${(error as Error).message}`);
     }
   };
 
@@ -178,6 +209,7 @@ export default function AdminPage() {
                     )}
                 </div>
 
+
                 {/* 設問 & 編集フォーム Column */}
                 <div className="bg-white p-4 rounded-lg shadow md:col-span-1">
                     <div className="flex justify-between items-center mb-4">
@@ -189,11 +221,18 @@ export default function AdminPage() {
                             <ul className="space-y-2 mb-6">
                                 {selectedTopic.problems.map(problem => (
                                     <li key={problem.id} onClick={() => setSelectedProblem(problem)} className={`p-2 rounded cursor-pointer flex justify-between items-center ${selectedProblem?.id === problem.id ? 'bg-blue-100' : 'hover:bg-gray-100'}`}>
-                                        <span className="truncate text-black">{problem.title}</span>
-                                        <button onClick={(e) => { e.stopPropagation(); handleDelete('problem', problem); }} className="text-red-500 hover:text-red-700 text-xs ml-2">削除</button>
+                                        <span className={`truncate text-black ${!problem.published && 'text-gray-400'}`}>{problem.title}</span>
+                                        <div className="flex items-center space-x-2">
+                                            {/* ★追加: 公開状態切り替えボタン */}
+                                            <button onClick={(e) => { e.stopPropagation(); handleTogglePublished(problem);}} className={problem.published ? 'text-green-500' : 'text-gray-400'}>
+                                                {problem.published ? <EyeOpenIcon /> : <EyeClosedIcon />}
+                                            </button>
+                                            <button onClick={(e) => { e.stopPropagation(); handleDelete('problem', problem); }} className="text-red-500 hover:text-red-700 text-xs">削除</button>
+                                        </div>
                                     </li>
                                 ))}
                             </ul>
+
 
                             {selectedProblem && (
                                 <form onSubmit={handleUpdateProblem} className="space-y-4 border-t pt-6">

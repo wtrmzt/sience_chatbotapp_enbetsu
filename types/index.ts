@@ -18,5 +18,6 @@ export type Problem = {
   title: string; // 設問名 (例: 問2: 植物状態を〜)
   question: string; // 生徒への「最初の問いかけ」
   prompt: string; // AIへの指示プロンプト
+  published: boolean; // ★追加: 生徒に公開されているか
 };
 
