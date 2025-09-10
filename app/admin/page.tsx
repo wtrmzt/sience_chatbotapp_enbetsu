@@ -92,8 +92,32 @@ export default function AdminPage() {
             parentIds = { lessonId: selectedLesson.id, topicId: selectedTopic.id };
         }
         
-        await apiRequest('/api/worksheets', 'POST', { type, payload, parentIds });
-        fetchData();
+        const newItem = await apiRequest('/api/worksheets', 'POST', { type, payload, parentIds });
+        
+        // ローカルのstateを直接更新して即時反映
+        setLessons(prevLessons => {
+            const newLessons = JSON.parse(JSON.stringify(prevLessons)); // Deep copy
+
+            if (type === 'lesson') {
+                newLessons.push({ ...newItem, topics: [] });
+                newLessons.sort((a: Lesson, b: Lesson) => a.name.localeCompare(b.name, 'ja'));
+            } else if (type === 'topic' && selectedLesson) {
+                const lesson = newLessons.find((l: Lesson) => l.id === selectedLesson.id);
+                if (lesson) {
+                    lesson.topics.push({ ...newItem, problems: [] });
+                    lesson.topics.sort((a: Topic, b: Topic) => a.name.localeCompare(b.name, 'ja'));
+                }
+            } else if (type === 'problem' && selectedLesson && selectedTopic) {
+                const lesson = newLessons.find((l: Lesson) => l.id === selectedLesson.id);
+                const topic = lesson?.topics.find((t: Topic) => t.id === selectedTopic.id);
+                if (topic) {
+                    topic.problems.push(newItem);
+                    topic.problems.sort((a: Problem, b: Problem) => a.title.localeCompare(b.title, 'ja'));
+                }
+            }
+            return newLessons;
+        });
+
     } catch (error) {
         alert(`追加に失敗しました: ${(error as Error).message}`);
     }

@@ -54,7 +54,7 @@ export default function ChatbotPage() {
     const fetchWorksheets = async () => {
       setIsLoadingData(true);
       try {
-        const response = await fetch('/api/worksheets');
+        const response = await fetch('/api/worksheets',{cache: 'no-store'});
         if (!response.ok) {
           const errorData = await response.json();
           throw new Error(errorData.error || 'ワークシートの読み込みに失敗しました。');
