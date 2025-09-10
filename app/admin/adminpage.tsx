@@ -7,19 +7,6 @@ import { Lesson, Topic, Problem } from '../../types';
 const EyeOpenIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M10 12a2 2 0 100-4 2 2 0 000 4z" /><path fillRule="evenodd" d="M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.022 7-9.542 7S1.732 14.057.458 10zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clipRule="evenodd" /></svg>;
 const EyeClosedIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M3.707 2.293a1 1 0 00-1.414 1.414l14 14a1 1 0 001.414-1.414l-1.473-1.473A10.014 10.014 0 0019.542 10C18.268 5.943 14.478 3 10 3a9.958 9.958 0 00-4.512 1.074l-1.78-1.781zM10 12a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd" /><path d="M2 10s3.939 4 8 4 8-4 8-4-3.939-4-8-4-8 4-8 4zm10.707-.293a1 1 0 00-1.414-1.414l-4 4a1 1 0 001.414 1.414l4-4z" /></svg>;
 
-// ソート関数
-const sortData = (lessons: Lesson[]): Lesson[] => {
-  return lessons.sort((a, b) => a.name.localeCompare(b.name, 'ja'));
-};
-
-const sortTopics = (topics: Topic[]): Topic[] => {
-  return topics.sort((a, b) => a.name.localeCompare(b.name, 'ja'));
-};
-
-const sortProblems = (problems: Problem[]): Problem[] => {
-  return problems.sort((a, b) => a.title.localeCompare(b.title, 'ja'));
-};
-
 // APIリクエストを送信するためのヘルパー関数
 const apiRequest = async (url: string, method: string, body?: any) => {
   const response = await fetch(url, {
@@ -47,7 +34,7 @@ export default function AdminPage() {
   const [formData, setFormData] = useState<Omit<Problem, 'id' | 'published'>>({ title: '', question: '', prompt: '' });
   const [isLoading, setIsLoading] = useState(true);
 
-  // ☆修正: fetchData関数をコンポーネントの中心に残します
+  // ★修正: fetchData関数をコンポーネントの中心に据えます
   const fetchData = async () => {
     setIsLoading(true);
     try {
@@ -72,57 +59,6 @@ export default function AdminPage() {
     fetchData();
   }, []);
   
-  // ☆修正: 選択されたアイテムがまだ存在するかチェックし、存在しない場合は選択を解除
-  useEffect(() => {
-    if (selectedLesson && !lessons.find(l => l.id === selectedLesson.id)) {
-      setSelectedLesson(null);
-      setSelectedTopic(null);
-      setSelectedProblem(null);
-    }
-    
-    if (selectedLesson && selectedTopic) {
-      const currentLesson = lessons.find(l => l.id === selectedLesson.id);
-      if (currentLesson && !currentLesson.topics.find(t => t.id === selectedTopic.id)) {
-        setSelectedTopic(null);
-        setSelectedProblem(null);
-      }
-    }
-    
-    if (selectedLesson && selectedTopic && selectedProblem) {
-      const currentLesson = lessons.find(l => l.id === selectedLesson.id);
-      const currentTopic = currentLesson?.topics.find(t => t.id === selectedTopic.id);
-      if (currentTopic && !currentTopic.problems.find(p => p.id === selectedProblem.id)) {
-        setSelectedProblem(null);
-      }
-    }
-  }, [lessons]);
-  
-  // ☆修正: 新しく追加されたアイテムを自動選択する処理を追加
-  const selectNewlyAddedItem = (newId: string, type: 'lesson' | 'topic' | 'problem') => {
-    if (type === 'lesson') {
-      const newLesson = lessons.find(l => l.id === newId);
-      if (newLesson) {
-        setSelectedLesson(newLesson);
-        setSelectedTopic(null);
-        setSelectedProblem(null);
-      }
-    } else if (type === 'topic' && selectedLesson) {
-      const currentLesson = lessons.find(l => l.id === selectedLesson.id);
-      const newTopic = currentLesson?.topics.find(t => t.id === newId);
-      if (newTopic) {
-        setSelectedTopic(newTopic);
-        setSelectedProblem(null);
-      }
-    } else if (type === 'problem' && selectedLesson && selectedTopic) {
-      const currentLesson = lessons.find(l => l.id === selectedLesson.id);
-      const currentTopic = currentLesson?.topics.find(t => t.id === selectedTopic.id);
-      const newProblem = currentTopic?.problems.find(p => p.id === newId);
-      if (newProblem) {
-        setSelectedProblem(newProblem);
-      }
-    }
-  };
-  
   useEffect(() => {
     if (selectedProblem) {
       setFormData({ title: selectedProblem.title, question: selectedProblem.question, prompt: selectedProblem.prompt });
@@ -131,7 +67,7 @@ export default function AdminPage() {
     }
   }, [selectedProblem]);
   
-  // --- イベントハンドラ（リアルタイム更新版） ---
+  // --- イベントハンドラ (★すべてfetchData()を呼ぶように修正) ---
   
   const handleAdd = async (type: 'lesson' | 'topic' | 'problem') => {
     let name: string | null = '';
@@ -153,58 +89,8 @@ export default function AdminPage() {
             payload = { title: '新しい設問', question: '', prompt: '' };
             parentIds = { lessonId: selectedLesson.id, topicId: selectedTopic.id };
         }
-        
-        const result = await apiRequest('/api/worksheets', 'POST', { type, payload, parentIds });
-        
-        // リアルタイムで状態を更新
-        if (type === 'lesson') {
-            const newLesson: Lesson = {
-                id: result.id,
-                name: payload.name,
-                topics: []
-            };
-            const updatedLessons = sortData([...lessons, newLesson]);
-            setLessons(updatedLessons);
-            setSelectedLesson(newLesson);
-            setSelectedTopic(null);
-            setSelectedProblem(null);
-        } else if (type === 'topic' && selectedLesson) {
-            const newTopic: Topic = {
-                id: result.id,
-                name: payload.name,
-                problems: []
-            };
-            const updatedLessons = lessons.map(lesson => 
-                lesson.id === selectedLesson.id
-                    ? { ...lesson, topics: sortTopics([...lesson.topics, newTopic]) }
-                    : lesson
-            );
-            setLessons(sortData(updatedLessons));
-            setSelectedTopic(newTopic);
-            setSelectedProblem(null);
-        } else if (type === 'problem' && selectedLesson && selectedTopic) {
-            const newProblem: Problem = {
-                id: result.id,
-                title: result.title,
-                question: result.question || '',
-                prompt: result.prompt || '',
-                published: result.published || false
-            };
-            const updatedLessons = lessons.map(lesson => 
-                lesson.id === selectedLesson.id
-                    ? {
-                        ...lesson,
-                        topics: lesson.topics.map(topic =>
-                            topic.id === selectedTopic.id
-                                ? { ...topic, problems: sortProblems([...topic.problems, newProblem]) }
-                                : topic
-                        )
-                    }
-                    : lesson
-            );
-            setLessons(sortData(updatedLessons));
-            setSelectedProblem(newProblem);
-        }
+        await apiRequest('/api/worksheets', 'POST', { type, payload, parentIds });
+        await fetchData(); // ★再取得してUIを更新
     } catch (error) {
         alert(`追加に失敗しました: ${(error as Error).message}`);
     }
@@ -218,30 +104,8 @@ export default function AdminPage() {
         problem: { ...formData, id: selectedProblem.id },
         parentIds: { lessonId: selectedLesson.id, topicId: selectedTopic.id },
       });
-      
-      // リアルタイムで状態を更新
-      const updatedLessons = lessons.map(lesson => 
-        lesson.id === selectedLesson.id
-          ? {
-              ...lesson,
-              topics: lesson.topics.map(topic =>
-                topic.id === selectedTopic.id
-                  ? {
-                      ...topic,
-                      problems: topic.problems.map(problem =>
-                        problem.id === selectedProblem.id
-                          ? { ...problem, ...formData }
-                          : problem
-                      )
-                    }
-                  : topic
-              )
-            }
-          : lesson
-      );
-      setLessons(sortData(updatedLessons));
-      setSelectedProblem({ ...selectedProblem, ...formData });
       alert('更新しました。');
+      await fetchData(); // ★再取得してUIを更新
     } catch (error) {
       alert(`更新に失敗しました: ${(error as Error).message}`);
     }
@@ -255,41 +119,7 @@ export default function AdminPage() {
             published: !problem.published,
             parentIds: { lessonId: selectedLesson.id, topicId: selectedTopic.id },
         });
-        
-        // リアルタイムで状態を更新
-        const updatedLessons = lessons.map(lesson => 
-          lesson.id === selectedLesson.id
-            ? {
-                ...lesson,
-                topics: lesson.topics.map(topic =>
-                  topic.id === selectedTopic.id
-                    ? {
-                        ...topic,
-                        problems: topic.problems.map(p =>
-                          p.id === problem.id
-                            ? { ...p, published: !p.published }
-                            : p
-                        )
-                      }
-                    : topic
-                )
-              }
-            : lesson
-        );
-        setLessons(updatedLessons);
-        
-        // 選択されたレッスン、トピック、問題を更新
-        const updatedSelectedLesson = updatedLessons.find(l => l.id === selectedLesson.id);
-        const updatedSelectedTopic = updatedSelectedLesson?.topics.find(t => t.id === selectedTopic.id);
-        const updatedSelectedProblem = updatedSelectedTopic?.problems.find(p => p.id === problem.id);
-        
-        if (updatedSelectedLesson && updatedSelectedTopic) {
-          setSelectedLesson(updatedSelectedLesson);
-          setSelectedTopic(updatedSelectedTopic);
-          if (updatedSelectedProblem && selectedProblem?.id === problem.id) {
-            setSelectedProblem(updatedSelectedProblem);
-          }
-        }
+        await fetchData(); // ★再取得してUIを更新
     } catch (error) {
         alert(`公開状態の更新に失敗しました: ${(error as Error).message}`);
     }
@@ -309,77 +139,10 @@ export default function AdminPage() {
       
       await apiRequest(`/api/worksheets?${params.toString()}`, 'DELETE');
       
-      // リアルタイムで状態を更新
-      if (type === 'lesson') {
-        const updatedLessons = lessons.filter(lesson => lesson.id !== item.id);
-        setLessons(updatedLessons);
-        setSelectedLesson(null);
-        setSelectedTopic(null);
-        setSelectedProblem(null);
-      } else if (type === 'topic' && selectedLesson) {
-        const updatedLessons = lessons.map(lesson => 
-          lesson.id === selectedLesson.id
-            ? { ...lesson, topics: lesson.topics.filter(topic => topic.id !== item.id) }
-            : lesson
-        );
-        setLessons(updatedLessons);
-        
-        // 更新された選択レッスンを設定し、削除されたトピックが選択されていた場合は選択解除
-        const updatedSelectedLesson = updatedLessons.find(l => l.id === selectedLesson.id);
-        if (updatedSelectedLesson) {
-          setSelectedLesson(updatedSelectedLesson);
-          // 削除されたトピックが選択されていた場合は選択解除
-          if (selectedTopic && selectedTopic.id === item.id) {
-            setSelectedTopic(null);
-            setSelectedProblem(null);
-          } else if (selectedTopic) {
-            // 他のトピックが選択されていた場合は、更新されたトピックオブジェクトを設定
-            const updatedSelectedTopic = updatedSelectedLesson.topics.find(t => t.id === selectedTopic.id);
-            if (updatedSelectedTopic) {
-              setSelectedTopic(updatedSelectedTopic);
-            }
-          }
-        } else {
-          setSelectedTopic(null);
-          setSelectedProblem(null);
-        }
-      } else if (type === 'problem' && selectedLesson && selectedTopic) {
-        const updatedLessons = lessons.map(lesson => 
-          lesson.id === selectedLesson.id
-            ? {
-                ...lesson,
-                topics: lesson.topics.map(topic =>
-                  topic.id === selectedTopic.id
-                    ? { ...topic, problems: topic.problems.filter(problem => problem.id !== item.id) }
-                    : topic
-                )
-              }
-            : lesson
-        );
-        setLessons(updatedLessons);
-        
-        // 更新された選択レッスンとトピックを設定
-        const updatedSelectedLesson = updatedLessons.find(l => l.id === selectedLesson.id);
-        const updatedSelectedTopic = updatedSelectedLesson?.topics.find(t => t.id === selectedTopic.id);
-        if (updatedSelectedLesson && updatedSelectedTopic) {
-          setSelectedLesson(updatedSelectedLesson);
-          setSelectedTopic(updatedSelectedTopic);
-          // 削除された問題が選択されていた場合は選択解除
-          if (selectedProblem && selectedProblem.id === item.id) {
-            setSelectedProblem(null);
-            setFormData({ title: '', question: '', prompt: '' });
-          } else if (selectedProblem) {
-            // 他の問題が選択されていた場合は、更新された問題オブジェクトを設定
-            const updatedSelectedProblem = updatedSelectedTopic.problems.find(p => p.id === selectedProblem.id);
-            if (updatedSelectedProblem) {
-              setSelectedProblem(updatedSelectedProblem);
-            }
-          }
-        } else {
-          setSelectedProblem(null);
-          setFormData({ title: '', question: '', prompt: '' });
-        }
-      }
+      if(type === 'problem') setSelectedProblem(null);
+      if(type === 'topic') { setSelectedTopic(null); setSelectedProblem(null); }
+      if(type === 'lesson') { setSelectedLesson(null); setSelectedTopic(null); setSelectedProblem(null); }
+      await fetchData(); // ★再取得してUIを更新
     } catch (error) {
       alert(`削除に失敗しました: ${(error as Error).message}`);
     }
@@ -450,3 +213,4 @@ export default function AdminPage() {
     </div>
   );
 }
+

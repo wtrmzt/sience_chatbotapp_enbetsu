@@ -8,13 +8,17 @@ import {
   updateDoc, 
   addDoc, 
   deleteDoc,
-  query
+  query,
+  where
 } from 'firebase/firestore';
 import { NextResponse } from 'next/server';
 
 // GET: 全ての科目・授業・設問データを階層構造で取得
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const { searchParams } = new URL(request.url);
+    const includeUnpublished = searchParams.get('includeUnpublished') === 'true';
+    
     const lessonsCollection = collection(db, 'lessons');
     const lessonsSnapshot = await getDocs(lessonsCollection);
     const lessons: Lesson[] = [];
@@ -37,14 +41,28 @@ export async function GET() {
         };
 
         const problemsSnapshot = await getDocs(collection(db, `lessons/${lessonDoc.id}/topics/${topicDoc.id}/problems`));
-        topic.problems = problemsSnapshot.docs.map(problemDoc => ({
+        const allProblems = problemsSnapshot.docs.map(problemDoc => ({
           id: problemDoc.id,
           ...problemDoc.data(),
         } as Problem));
         
-        lesson.topics.push(topic);
+        // 管理者ページの場合は全て表示、ユーザーページの場合は公開済みのみ
+        if (includeUnpublished) {
+          topic.problems = allProblems;
+        } else {
+          topic.problems = allProblems.filter(problem => problem.published === true);
+        }
+        
+        // トピックに問題がある場合のみ追加（ユーザーページでは空のトピックは除外）
+        if (includeUnpublished || topic.problems.length > 0) {
+          lesson.topics.push(topic);
+        }
       }
-      lessons.push(lesson);
+      
+      // レッスンにトピックがある場合のみ追加（ユーザーページでは空のレッスンは除外）
+      if (includeUnpublished || lesson.topics.length > 0) {
+        lessons.push(lesson);
+      }
     }
 
     return NextResponse.json(lessons);
@@ -69,6 +87,7 @@ export async function POST(request: Request) {
         title: payload.title || '新しい設問',
         question: payload.question || '最初の問いかけを編集してください。',
         prompt: payload.prompt || 'プロンプトを編集してください。',
+        published: false, // 新しい問題はデフォルトで非公開
       };
       newDocRef = await addDoc(collection(db, `lessons/${parentIds.lessonId}/topics/${parentIds.topicId}/problems`), newProblem);
       return NextResponse.json({ id: newDocRef.id, ...newProblem });
