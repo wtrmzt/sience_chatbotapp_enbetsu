@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect,useRef } from 'react';
 import { Lesson, Topic, Problem } from '../types';
 
 // Message type definition - simplified to match basic structure
@@ -29,6 +29,32 @@ const ChevronDownIcon = () => (
   </svg>
 );
 
+// ★追加: 1文字ずつ表示するためのコンポーネント
+const StreamingMessage = ({ content }: { content: string }) => {
+  const [displayedContent, setDisplayedContent] = useState('');
+  const currentIndexRef = useRef(0);
+
+  useEffect(() => {
+    // 新しいコンテンツがストリームで追加された場合、タイピングを続行
+    if (currentIndexRef.current < content.length) {
+      const intervalId = setInterval(() => {
+        if (currentIndexRef.current < content.length) {
+          // 表示するテキストを1文字ずつ増やしていく
+          setDisplayedContent(content.substring(0, currentIndexRef.current + 1));
+          currentIndexRef.current += 1;
+        } else {
+          clearInterval(intervalId);
+        }
+      }, 30); // 1文字を表示する速度 (ミリ秒)
+
+      // コンポーネントがアンマウントされたらインターバルをクリア
+      return () => clearInterval(intervalId);
+    }
+  }, [content]);
+
+  return <p className="text-sm" style={{ whiteSpace: 'pre-wrap' }}>{displayedContent}</p>;
+};
+
 export default function ChatbotPage() {
   const [lessons, setLessons] = useState<Lesson[]>([]);
   const [selectedLessonId, setSelectedLessonId] = useState<string | null>(null);
@@ -47,6 +73,9 @@ export default function ChatbotPage() {
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setInput(e.target.value);
   };
+
+  // ★追加: チャットの自動スクロール用のref
+  const chatEndRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     const fetchWorksheets = async () => {
@@ -98,6 +127,11 @@ export default function ChatbotPage() {
     fetchWorksheets();
   }, []);
 
+  // ★追加: メッセージが更新されるたびに一番下までスクロール
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+
   const currentLesson = lessons.find(l => l.id === selectedLessonId);
   const currentTopic = currentLesson?.topics.find(t => t.id === selectedTopicId);
   const currentProblem = currentTopic?.problems.find(p => p.id === selectedProblemId);
@@ -121,14 +155,16 @@ export default function ChatbotPage() {
     setIsSelectorOpen(false);
   };
 
-  // Custom form submission with proper teacher prompt handling
+  // ★修正: ストリーミング対応とエラーハンドリングを強化したフォーム送信処理
   const handleFormSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     
     if (!currentProblem || !input.trim() || isLoading) return;
     
     const userInput = input.trim();
-    setInput(''); // Clear input immediately
+    // Clear input and error message immediately
+    setInput('');
+    setError(null);
     setIsLoading(true);
     
     // Create user message
@@ -138,17 +174,22 @@ export default function ChatbotPage() {
       content: userInput,
     };
 
-    // Update messages with user input
+    // Update messages with user input and placeholder for assistant's response
     const updatedMessages = [...messages, userMessage];
-    setMessages(updatedMessages);
+    const assistantMessageId = (Date.now() + 1).toString();
+    const assistantMessage: ChatMessage = {
+      id: assistantMessageId,
+      role: 'assistant',
+      content: '',
+    };
+    
+    setMessages([...updatedMessages, assistantMessage]);
     
     try {
       // Send request to API with teacher prompt
       const response = await fetch('/api/chat', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           messages: updatedMessages.map(msg => ({
             role: msg.role,
@@ -158,29 +199,78 @@ export default function ChatbotPage() {
         }),
       });
 
+      // Handle non-200 responses
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'チャットAPIでエラーが発生しました。');
+        const errorData = await response.json().catch(() => ({ message: '不明なサーバーエラーが発生しました。' }));
+        throw new Error(`APIエラー (${response.status}): ${errorData.message || '応答の解析に失敗しました。'}`);
       }
 
-      const data = await response.json();
-      
-      if (data.content) {
-        // Add assistant response
-        const assistantMessage: ChatMessage = {
-          id: (Date.now() + 1).toString(),
-          role: 'assistant',
-          content: data.content
-        };
-        
-        setMessages([...updatedMessages, assistantMessage]);
-      } else {
-        throw new Error('APIからの応答が不正です。');
+      // Ensure response has a body to read from
+      if (!response.body) {
+        throw new Error('APIからのレスポンスにボディが含まれていません。');
       }
+
+      // Process the streaming response
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let accumulatedContent = '';
+      let doneReading = false;
+
+      while (!doneReading) {
+        const { done, value } = await reader.read();
+        if (done) {
+          doneReading = true;
+          break;
+        }
+
+        const chunk = decoder.decode(value, { stream: true });
+        const lines = chunk.split('\n');
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            const dataStr = line.slice(6);
+            if (dataStr === '[DONE]') {
+              doneReading = true;
+              break;
+            }
+            
+            try {
+              const data = JSON.parse(dataStr);
+              if (data.content) {
+                accumulatedContent += data.content;
+                
+                // Update message content in real-time
+                setMessages(currentMessages => 
+                  currentMessages.map(msg => 
+                    msg.id === assistantMessageId 
+                      ? { ...msg, content: accumulatedContent }
+                      : msg
+                  )
+                );
+              }
+            } catch (parseError) {
+              console.warn('JSON parsing error in stream:', parseError, 'Data:', dataStr);
+            }
+          }
+        }
+      }
+      
+      reader.releaseLock();
+
+      // After the stream is finished, check if any content was actually received.
+      // If not, it indicates a problem with the API endpoint (`/api/chat`),
+      // which might be returning a 200 OK status but an empty data stream.
+      if (accumulatedContent.trim() === '') {
+        throw new Error('APIからの応答が空でした。サーバー側の /api/chat エンドポイントを確認してください。');
+      }
+
     } catch (error: any) {
-      console.error('Error:', error);
-      setError(error.message || 'メッセージの送信に失敗しました。');
-      // Restore input on error
+      console.error('Submit Error:', error);
+      setError(error.message || 'メッセージの送信中に不明なエラーが発生しました。');
+      
+      // On error, remove the placeholder assistant message
+      setMessages(updatedMessages);
+      // Restore user input to allow for resubmission
       setInput(userInput);
     } finally {
       setIsLoading(false);
@@ -253,49 +343,40 @@ export default function ChatbotPage() {
         </div>
       )}
 
-      {/* Main Chat Area */}
       <main className="flex-1 overflow-y-auto p-4 sm:p-6" style={{ scrollbarGutter: 'stable' }}>
         <div className="space-y-6 max-w-4xl mx-auto">
-          {error && (
-            <div className="text-red-500 bg-red-100 p-3 rounded-lg border border-red-300">
-              <div className="flex justify-between items-center">
-                <span>{error}</span>
-                <button 
-                  onClick={() => setError(null)}
-                  className="text-red-700 hover:text-red-900 ml-2"
-                >
-                  ✕
-                </button>
-              </div>
-            </div>
-          )}
-          {messages.map((message) => (
-            <div key={message.id} className={`flex items-start gap-3 ${message.role === 'user' ? 'justify-end' : ''}`}>
-              {message.role === 'assistant' && <BotIcon />}
-              <div className={`max-w-lg lg:max-w-xl p-3 rounded-2xl ${
-                message.role === 'user' 
-                  ? 'bg-blue-500 text-white rounded-br-none' 
-                  : 'bg-white text-black border border-gray-200 rounded-bl-none'
-              }`}>
-                <p className="text-sm" style={{ whiteSpace: 'pre-wrap' }}>{message.content}</p>
-              </div>
-              {message.role === 'user' && <UserIcon />}
-            </div>
-          ))}
-          {isLoading && (
-            <div className="flex items-start gap-3">
-              <BotIcon />
-              <div className="p-3 rounded-2xl bg-white border border-gray-200">
-                <div className="flex items-center space-x-2">
-                  <div className="w-2 h-2 bg-gray-400 rounded-full animate-pulse"></div>
-                  <div className="w-2 h-2 bg-gray-400 rounded-full animate-pulse delay-75"></div>
-                  <div className="w-2 h-2 bg-gray-400 rounded-full animate-pulse delay-150"></div>
+          {error && <div className="text-red-500 bg-red-100 p-3 rounded-lg">{error}</div>}
+          
+          {/* ★修正: メッセージのレンダリングをタイピングエフェクトに対応 */}
+          {messages.map((m: ChatMessage, index: number) => {
+              const isLastMessage = index === messages.length - 1;
+              // ローディング中で、アシスタントからの最後のメッセージの場合のみタイピングエフェクトを適用
+              const isStreaming = isLoading && isLastMessage && m.role === 'assistant';
+
+              return (
+                <div key={m.id} className={`flex items-start gap-3 ${m.role === 'user' ? 'justify-end' : ''}`}>
+                  {m.role === 'assistant' && <BotIcon />}
+                  <div className={`max-w-lg lg:max-w-xl p-3 rounded-2xl ${
+                      m.role === 'user' 
+                        ? 'bg-blue-500 text-white rounded-br-none' 
+                        : 'bg-white text-black border border-gray-200 rounded-bl-none'
+                    }`}>
+                    {isStreaming ? (
+                      <StreamingMessage content={m.content} />
+                    ) : (
+                      <p className="text-sm" style={{ whiteSpace: 'pre-wrap' }}>{m.content}</p>
+                    )}
+                  </div>
+                  {m.role === 'user' && <UserIcon />}
                 </div>
-              </div>
-            </div>
-          )}
+              );
+          })}
+          
+          {/* ★修正: 自動スクロールのためのターゲット要素 */}
+          <div ref={chatEndRef} />
         </div>
       </main>
+
 
       {/* Input Footer */}
       <footer className="bg-white p-4 border-t border-gray-200 sticky bottom-0 z-10">
